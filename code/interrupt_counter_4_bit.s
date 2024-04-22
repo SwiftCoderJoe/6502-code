@@ -150,14 +150,98 @@ reset:
  lda #%00010000
  jsr write_display_settings
 
- lda #"J"
- jsr write_display_character
-loop:
- jmp loop
+ lda #0
+ sta counter
+ sta counter + 1
 
+loop:
+ lda #%00000000 ; Return home
+ jsr write_display_settings
+ lda #%00100000
+ jsr write_display_settings
+
+ ; initialize message to be null-terminated
+ lda #0
+ sta message
+
+ ; initialize value to be number, to begin
+ lda counter
+ sta value
+ lda counter + 1
+ sta value + 1
+
+divide:
+ ; Initialize modten to be zero
+ lda #0
+ sta modten
+ sta modten + 1
+ clc
+ 
+ ldx #16
+division_loop:
+ ; Rotate value and modten left
+ rol value
+ rol value + 1
+ rol modten
+ rol modten + 1
+
+ ; a,y have dividend - divisor
+ sec
+ lda modten
+ sbc #10
+ tay ; save the low byte into Y
+ lda modten + 1
+ sbc #0
+ bcc ignore_result
+ sty modten
+ sta modten + 1
+
+ignore_result:
+ dex
+ bne division_loop
+ rol value
+ rol value + 1 
+
+ lda modten
+ clc
+ adc #"0"
+ jsr push_character
+
+ ; if value != 0, continue dividing
+ lda value
+ ora value + 1
+ bne divide
+ 
+ ldx #0
+write_message_loop:
+ lda message,x
+ beq loop ; Have to do this instead of bne because inx sets zero flag
+ jsr write_display_character
+ inx
+ jmp write_message_loop
 
 non_maskable_interrupt:
+ rti
+
 interrupt_request:
+ pha
+ txa
+ pha
+ tya
+ pha
+
+ inc counter
+ bne exit_irq
+ inc counter + 1
+exit_irq:
+ bit PORTA ; Clears interrupt by reading porta. overwrites some processor flags, but they are restored by rti.
+ 
+ pla
+ tay
+ pla
+ tax
+ pla
+ 
  rti
 
  .org $fffa
