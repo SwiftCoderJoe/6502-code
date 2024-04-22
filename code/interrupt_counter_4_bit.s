@@ -61,6 +61,7 @@ write_display_character:
  sta PORTB
  ora #DISP_E ; enable E
  sta PORTB
+ eor #DISP_E ; disable E
  sta PORTB
 
  pla ; Pull back the original 8 bit sequence
@@ -78,6 +79,8 @@ write_display_character:
  rts
 
 write_display_settings:
+ jsr display_wait
+
  sta PORTB ; Send data with E, RW, RS zeroed
  ora #DISP_E ; Enable E
  sta PORTB ; Send
@@ -147,7 +150,7 @@ reset:
  lda #%00010000
  jsr write_display_settings
 
- lda "J"
+ lda #"J"
  jsr write_display_character
 loop:
  jmp loop
