@@ -234,6 +234,15 @@ interrupt_request:
  bne exit_irq
  inc counter + 1
 exit_irq:
+ ; delay for a pseudo-debounce
+ ldy #$ff
+ ldx #$ff
+interrupt_delay:
+ dex
+ bne interrupt_delay
+ dey
+ bne interrupt_delay
+
  bit PORTA ; Clears interrupt by reading porta. overwrites some processor flags, but they are restored by rti.
  
  pla
