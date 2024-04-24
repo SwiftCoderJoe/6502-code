@@ -91,12 +91,26 @@ write_display_character:
 
 write_display_settings:
  jsr display_wait
+ pha
 
- sta PORTB ; Send data with E, RW, RS zeroed
- ora #DISP_E ; Enable E
- sta PORTB ; Send
- eor #DISP_E; Rezero E
- sta PORTB ; Send
+ ; first four bits
+ and #%11110000 ; mask to just the first four bits
+ sta PORTB
+ ora #DISP_E ; enable E
+ sta PORTB
+ eor #DISP_E ; disable E
+ sta PORTB
+
+ pla ; Pull back the original 8 bit sequence
+ asl ; and shift it left four times
+ asl ; in order to send the low nibble
+ asl
+ asl ; we don't need to bitmask because asl doesn't shift in the carry bit
+ sta PORTB
+ ora #DISP_E ; enable E
+ sta PORTB
+ eor #DISP_E ; disable E
+ sta PORTB
 
  rts
 
@@ -111,9 +125,7 @@ keypress_return:
  jmp loop
 
 escape_pressed: ; TODO: change this when we change lcd instructions to easy 8-bit conversion
- lda #0
- jsr write_display_settings
- lda #%00010000
+ lda #000000001
  jsr write_display_settings
  jmp keypress_return
 
@@ -135,27 +147,20 @@ reset:
  lda #%00000000 ; Set port A to input
  sta DATADIRECTIONA
 
- lda #%00100000 ; Initialize comm mode. This is understood as an 8-bit command, so it must be sent again to correctly initialize display.
+ lda #%00101000 ; Initialize comm mode, display size, and font. 
+ jsr write_display_settings ; This is understood as an 8-bit command, so it must be sent three times to correctly initialize display.
+ lda #%00101000
+ jsr write_display_settings
+ lda #%00101000
  jsr write_display_settings
 
- lda #%00100000 ; Initialize display size and font.
- jsr write_display_settings
- lda #%10000000
+ lda #%00001110 ; Display on, cursor on, blinking off
  jsr write_display_settings
 
- lda #%00000000 ; Display on, cursor on, blinking off
- jsr write_display_settings
- lda #%11100000
+ lda #%00000110 ; Cursor moves forward; don't shift display
  jsr write_display_settings
 
- lda #%00000000 ; Cursor moves forward; don't shift display
- jsr write_display_settings
- lda #%01100000
- jsr write_display_settings
-
- lda #%00000000 ; Clr display
- jsr write_display_settings
- lda #%00010000
+ lda #%00000001 ; Clr display
  jsr write_display_settings
 
  lda #0
