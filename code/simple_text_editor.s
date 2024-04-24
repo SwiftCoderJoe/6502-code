@@ -20,9 +20,14 @@ keyboard_flags = $0002
 RELEASE_SCANCODE_SEEN = %00000001
 SHIFT_HELD = %00000010
 
+; scancodes
 KEYBOARD_RELEASE_SCANCODE = $f0
 LSHIFT_SCANCODE = $12
 RSHIFT_SCANCODE = $59
+
+; ascii codes
+ESCAPE_ASCII = $1b
+QUOTE_ASCII = $22
 
  .org $8000
 
@@ -82,7 +87,7 @@ write_display_character:
  eor #DISP_E ; disable E
  sta PORTB
 
- rts
+ jmp keypress_return
 
 write_display_settings:
  jsr display_wait
@@ -98,9 +103,19 @@ write_display_settings:
 key_pressed:
  ldx keyboard_buffer_read_ptr
  lda keyboard_buffer, x
- jsr write_display_character
+ cmp #ESCAPE_ASCII
+ beq escape_pressed
+ jmp write_display_character
+keypress_return:
  inc keyboard_buffer_read_ptr
  jmp loop
+
+escape_pressed: ; TODO: change this when we change lcd instructions to easy 8-bit conversion
+ lda #0
+ jsr write_display_settings
+ lda #%00010000
+ jsr write_display_settings
+ jmp keypress_return
 
 reset:
  cli ; Allow interrupts
@@ -242,7 +257,7 @@ keymap:
   .byte "?,kio09??./l;p-?" ; 40-4F
   .byte "??'?[=?????]?\??" ; 50-5F
   .byte "?????????1?47???" ; 60-6F
-  .byte "0.2568???+3-*9??" ; 70-7F
+  .byte "0.2568",ESCAPE_ASCII,"??+3-*9??" ; 70-7F, esc
   .byte "????????????????" ; 80-8F
   .byte "????????????????" ; 90-9F
   .byte "????????????????" ; A0-AF
@@ -257,7 +272,7 @@ shifted_keymap:
   .byte "?CXDE#$?? VFTR%?" ; 20-2F
   .byte "?NBHGY^???MJU&*?" ; 30-3F
   .byte "?<KIO)(??>?L:P_?" ; 40-4F
-  .byte "??",$22,"?{+?????}?|??" ; 50-5F, "
+  .byte "??",QUOTE_ASCII,"?{+?????}?|??" ; 50-5F, "
   .byte "?????????1?47???" ; 60-6F
   .byte "0.2568???+3-*9??" ; 70-7F
   .byte "????????????????" ; 80-8F
