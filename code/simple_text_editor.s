@@ -12,12 +12,10 @@ DISP_E  = %00000100
 DISP_RW = %00000010
 DISP_RS = %00000001
 
-value = $0200 ; 2 byte size
-modten = $0202
-message = $0204 ; 6 bytes
+keyboard_buffer = $0200 ; 256-byte keyboard scancode bugger from 0200-02ff
+keyboard_buffer_write_ptr = $0000
+keyboard_buffer_read_ptr = $0001
 
-counter = $020a ; 2 bytes
- 
  .org $8000
 
 display_wait:
@@ -89,25 +87,12 @@ write_display_settings:
 
  rts
 
-; Add the character in reg.a to a null-terminated `message`
-push_character:
- pha
- ldy #0
-
-push_character_loop:
- lda message,y ; get char from string and put it into x
- tax
- pla
- sta message,y ; replace that character with last character
- iny
- txa
- pha ; move that character back into the stack
- bne push_character_loop
-
- pla
- sta message,y ; Last null-terminator must be added back, finally
-
- rts
+key_pressed:
+ ldx keyboard_buffer_read_ptr
+ lda keyboard_buffer, x
+ jsr write_display_character
+ inc keyboard_buffer_read_ptr
+ jmp loop
 
 reset:
  cli ; Allow interrupts
@@ -155,70 +140,12 @@ reset:
  sta counter + 1
 
 loop:
- lda #%00000000 ; Return home
- jsr write_display_settings
- lda #%00100000
- jsr write_display_settings
-
- ; initialize message to be null-terminated
- lda #0
- sta message
-
- ; initialize value to be number, to begin
- lda counter
- sta value
- lda counter + 1
- sta value + 1
-
-divide:
- ; Initialize modten to be zero
- lda #0
- sta modten
- sta modten + 1
- clc
- 
- ldx #16
-division_loop:
- ; Rotate value and modten left
- rol value
- rol value + 1
- rol modten
- rol modten + 1
-
- ; a,y have dividend - divisor
- sec
- lda modten
- sbc #10
- tay ; save the low byte into Y
- lda modten + 1
- sbc #0
- bcc ignore_result
- sty modten
- sta modten + 1
-
-ignore_result:
- dex
- bne division_loop
- rol value
- rol value + 1 
-
- lda modten
- clc
- adc #"0"
- jsr push_character
-
- ; if value != 0, continue dividing
- lda value
- ora value + 1
- bne divide
- 
- ldx #0
-write_message_loop:
- lda message,x
- beq loop ; Have to do this instead of bne because inx sets zero flag
- jsr write_display_character
- inx
- jmp write_message_loop
+ sei
+ lda keyboard_buffer_read_ptr
+ cmp keyboard_buffer_write_ptr
+ cli
+ bne key_pressed
+ jmp loop
 
 non_maskable_interrupt:
  rti
