@@ -51,13 +51,16 @@ DISP_FS_TWO_LINE = %00001000
 DISP_FS_4_BIT = %00000000
 DISP_FS_8_BIT = %00010000
 
-keyboard_buffer = $0200 ; 256-byte keyboard scancode bugger from 0200-02ff
+keyboard_buffer = $0200 ; 256-byte keyboard scancode buffer from 0200-02ff
 keyboard_buffer_write_ptr = $0000
 keyboard_buffer_read_ptr = $0001
 
 keyboard_flags = $0002
 RELEASE_SCANCODE_SEEN = %00000001
 SHIFT_HELD = %00000010
+DISPLAY_IS_SHIFTING = %10000000
+
+keyboard_location = $0003 ; a counter to define where we are on the display right now.
 
 ; scancodes
 KEYBOARD_RELEASE_SCANCODE = $f0
@@ -68,6 +71,7 @@ RSHIFT_SCANCODE = $59
 ESCAPE_ASCII = $1b
 QUOTE_ASCII = $22
 BACKSPACE_ASCII = $08
+ENTER_ASCII = $0A
 
  .org $8000
 
@@ -127,7 +131,7 @@ write_display_character:
  eor #DISP_E ; disable E
  sta PORTB
 
- jmp keypress_return
+ rts
 
 write_display_settings:
  jsr display_wait
@@ -154,20 +158,60 @@ write_display_settings:
 
  rts
 
+correct_backspace_shift:
+ lda #(DISP_CURSOR_SHIFT | DISP_CS_DISPLAY_SHIFT | DISP_CS_SHIFT_RIGHT)
+ jsr write_display_settings
+ lda #(DISP_CURSOR_SHIFT | DISP_CS_DISPLAY_SHIFT | DISP_CS_SHIFT_RIGHT)
+ jsr write_display_settings
+ jmp correct_backspace_shift_return
+
+escape_pressed:
+ lda #0
+ sta keyboard_location
+ lda #DISP_CLEAR
+ jsr write_display_settings
+ lda #(DISP_ENTRY_MODE | DISP_EM_RIGHT | DISP_EM_SHIFT_CURSOR)
+ jsr write_display_settings
+ jmp keypress_return
+
+backspace_pressed:
+ lda #(DISP_CURSOR_SHIFT | DISP_CS_CURSOR_MOVE | DISP_CS_SHIFT_LEFT)
+ jsr write_display_settings
+ lda #" "
+ jsr write_display_character
+ lda #(DISP_CURSOR_SHIFT | DISP_CS_CURSOR_MOVE | DISP_CS_SHIFT_LEFT)
+ jsr write_display_settings
+ lda keyboard_flags
+ and #DISPLAY_IS_SHIFTING
+ bne correct_backspace_shift
+correct_backspace_shift_return:
+ dec keyboard_location
+ jmp keypress_return
+
+enter_pressed:
+ lda #(DISP_HOME)
+ jsr write_display_settings
+ lda #%00101000
+ sta keyboard_location
+ ora #DISP_DDRAM_SET
+ jsr write_display_settings
+ lda #(DISP_ENTRY_MODE | DISP_EM_RIGHT | DISP_EM_SHIFT_CURSOR)
+ jsr write_display_settings
+ jmp keypress_return
+
 key_pressed:
  ldx keyboard_buffer_read_ptr
  lda keyboard_buffer, x
  cmp #ESCAPE_ASCII
  beq escape_pressed
- jmp write_display_character
+ cmp #BACKSPACE_ASCII
+ beq backspace_pressed
+ cmp #ENTER_ASCII
+ beq enter_pressed
+ jsr handle_regular_character
 keypress_return:
  inc keyboard_buffer_read_ptr
  jmp loop
-
-escape_pressed: ; TODO: change this when we change DISP instructions to easy 8-bit conversion
- lda #DISP_CLEAR
- jsr write_display_settings
- jmp keypress_return
 
 reset:
  cli ; Allow interrupts
@@ -194,19 +238,20 @@ reset:
  lda #(DISP_FUNCTION_SET | DISP_FS_4_BIT | DISP_FS_FONT5x8 | DISP_FS_TWO_LINE)
  jsr write_display_settings
 
- lda #(DISP_MODE | DISP_DM_CURSOR_BLINK | DISP_DM_CURSOR_ON | DISP_DM_DISPLAY_ON) ; Display on, cursor on, blinking off
+ lda #(DISP_MODE | DISP_DM_CURSOR_NOBLINK | DISP_DM_CURSOR_ON | DISP_DM_DISPLAY_ON)
  jsr write_display_settings
 
- lda #(DISP_ENTRY_MODE | DISP_EM_SHIFT_CURSOR | DISP_EM_RIGHT) ; Cursor moves right; 
+ lda #(DISP_ENTRY_MODE | DISP_EM_SHIFT_CURSOR | DISP_EM_RIGHT)
  jsr write_display_settings
 
- lda #DISP_CLEAR ; Clr display
+ lda #DISP_CLEAR
  jsr write_display_settings
 
  lda #0
  sta keyboard_buffer_write_ptr
  sta keyboard_buffer_read_ptr
  sta keyboard_flags
+ sta keyboard_location
 
 loop:
  sei
@@ -215,6 +260,51 @@ loop:
  cli
  bne key_pressed
  jmp loop
+
+handle_regular_character:
+ jsr write_display_character
+ inc keyboard_location
+ lda keyboard_location
+ cmp #$10
+ beq cursor_offscreen
+ cmp #$38
+ beq cursor_offscreen
+ cmp #$28
+ beq cursor_wrap
+ cmp #$50
+ beq cursor_return_home_to_overwrite
+return_from_display_shift
+ rts
+
+cursor_offscreen:
+ lda keyboard_flags
+ ora #DISPLAY_IS_SHIFTING
+ sta keyboard_flags
+ lda #(DISP_ENTRY_MODE | DISP_EM_RIGHT | DISP_EM_SHIFT_DISPLAY)
+ jsr write_display_settings
+ jmp return_from_display_shift
+
+cursor_wrap:
+ lda keyboard_flags
+ eor #DISPLAY_IS_SHIFTING
+ sta keyboard_flags
+ lda #(DISP_HOME)
+ jsr write_display_settings
+ lda #(DISP_ENTRY_MODE | DISP_EM_RIGHT | DISP_EM_SHIFT_CURSOR)
+ jsr write_display_settings
+ lda #(DISP_DDRAM_SET | %00101000)
+ jsr write_display_settings
+ jmp return_from_display_shift 
+
+cursor_return_home_to_overwrite:
+ lda keyboard_flags
+ eor #DISPLAY_IS_SHIFTING
+ sta keyboard_flags
+ lda #(DISP_HOME)
+ jsr write_display_settings
+ lda #(DISP_ENTRY_MODE | DISP_EM_RIGHT | DISP_EM_SHIFT_CURSOR)
+ jsr write_display_settings
+ jmp return_from_display_shift
 
 non_maskable_interrupt:
  rti
@@ -300,7 +390,7 @@ keymap:
  .byte "?cxde43?? vftr5?" ; 20-2F
  .byte "?nbhgy6???mju78?" ; 30-3F
  .byte "?,kio09??./l;p-?" ; 40-4F
- .byte "??'?[=?????]?\??" ; 50-5F
+ .byte "??'?[=????",ENTER_ASCII,"]?\??" ; 50-5F
  .byte "??????",BACKSPACE_ASCII,"??1?47???" ; 60-6F
  .byte "0.2568",ESCAPE_ASCII,"??+3-*9??" ; 70-7F
  .byte "????????????????" ; 80-8F
