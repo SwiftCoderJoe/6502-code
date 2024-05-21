@@ -168,6 +168,8 @@ correct_backspace_shift:
 escape_pressed:
  lda #0
  sta keyboard_location
+ lda keyboard_flags
+ and #(!DISPLAY_IS_SHIFTING)
  lda #DISP_CLEAR
  jsr write_display_settings
  lda #(DISP_ENTRY_MODE | DISP_EM_RIGHT | DISP_EM_SHIFT_CURSOR)
@@ -328,7 +330,7 @@ interrupt_request:
  beq handle_shift_up
  jmp end_interrupt
 
-read_key
+read_key:
  lda PORTA
 
  ; Check for release
