@@ -170,6 +170,7 @@ escape_pressed:
  sta keyboard_location
  lda keyboard_flags
  and #(!DISPLAY_IS_SHIFTING)
+ sta keyboard_flags
  lda #DISP_CLEAR
  jsr write_display_settings
  lda #(DISP_ENTRY_MODE | DISP_EM_RIGHT | DISP_EM_SHIFT_CURSOR)
